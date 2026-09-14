@@ -81,6 +81,22 @@ jobs:
     uses: JimmayVV/fleet-ci/.github/workflows/review-automerge.yml@v1
 ```
 
+## Caller permissions
+
+A caller must declare a top-level `permissions:` block at least as wide as
+the workflow it calls, or the run fails at startup with no logs. Use:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+  id-token: write
+```
+
+for risk.yml, review.yml, and dependabot callers; `contents: read` is enough
+for node-ci.yml.
+
 ## Repo settings each caller needs
 
 - Allow auto-merge enabled (Settings → General). Private repos need a paid plan.
