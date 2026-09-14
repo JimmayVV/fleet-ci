@@ -67,6 +67,10 @@ on:
       playwright-timeout:
         type: number
         default: 15
+    secrets:
+      build-secrets:
+        description: KEY=VALUE lines exported before build and e2e, from the caller's secrets
+        required: false
 
 permissions:
   contents: read
@@ -125,10 +129,11 @@ jobs:
           node-version-file: ${{ inputs.node-version-file }}
           bun-version: ${{ inputs.bun-version }}
       - name: Export build env
-        if: inputs.build-env != ''
-        run: printf '%s\n' "$BUILD_ENV" | grep -v '^\s*$' >> "$GITHUB_ENV"
+        if: inputs.build-env != '' || env.BUILD_SECRETS != ''
+        run: printf '%s\n%s\n' "$BUILD_ENV" "$BUILD_SECRETS" | grep -v '^\s*$' >> "$GITHUB_ENV"
         env:
           BUILD_ENV: ${{ inputs.build-env }}
+          BUILD_SECRETS: ${{ secrets.build-secrets }}
       - name: Build
         run: ${{ inputs.package-manager }} run ${{ inputs.build-script }}
 
@@ -149,10 +154,11 @@ jobs:
       - name: Install Playwright browsers
         run: ${{ inputs.package-manager == 'bun' && 'bunx' || 'npx' }} playwright install --with-deps ${{ inputs.playwright-browsers }}
       - name: Export build env
-        if: inputs.build-env != ''
-        run: printf '%s\n' "$BUILD_ENV" | grep -v '^\s*$' >> "$GITHUB_ENV"
+        if: inputs.build-env != '' || env.BUILD_SECRETS != ''
+        run: printf '%s\n%s\n' "$BUILD_ENV" "$BUILD_SECRETS" | grep -v '^\s*$' >> "$GITHUB_ENV"
         env:
           BUILD_ENV: ${{ inputs.build-env }}
+          BUILD_SECRETS: ${{ secrets.build-secrets }}
       - name: Run Playwright
         run: ${{ inputs.package-manager }} run ${{ inputs.playwright-script }}
       - name: Upload Playwright report on failure
