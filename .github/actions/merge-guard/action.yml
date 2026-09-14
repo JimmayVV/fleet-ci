@@ -1,0 +1,34 @@
+name: Merge guard
+description: >-
+  Refuse to arm auto-merge unless the base branch has a ruleset or branch
+  protection that requires status checks. Without one, `gh pr merge --auto`
+  merges immediately, which turns "auto-merge on green" into "merge now".
+
+inputs:
+  base:
+    description: Base branch name
+    required: true
+
+outputs:
+  protected:
+    description: "true when at least one required status check rule applies"
+    value: ${{ steps.check.outputs.protected }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        BASE: ${{ inputs.base }}
+      run: |
+        rules=$(gh api "repos/$GH_REPO/rules/branches/$BASE" -q '[.[] | select(.type == "required_status_checks")] | length' 2>/dev/null || echo 0)
+        classic=$(gh api "repos/$GH_REPO/branches/$BASE/protection/required_status_checks" -q '.contexts | length' 2>/dev/null || echo 0)
+        if [ "${rules:-0}" -gt 0 ] || [ "${classic:-0}" -gt 0 ]; then
+          echo "protected=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "protected=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=Auto-merge not armed::No ruleset or branch protection requires status checks on '$BASE'. Arming would merge immediately. Add fleet-ci/rulesets/default-branch.json to this repo (private repos need GitHub Pro)."
+        fi

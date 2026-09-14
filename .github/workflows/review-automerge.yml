@@ -56,8 +56,22 @@ jobs:
           echo "$labels" | grep -qx 'risk:medium' || ok=false
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
           echo "author=$AUTHOR type=$AUTHOR_TYPE assoc=$ASSOC labels=[$labels] -> $ok"
-      - name: Enable auto-merge
+      - name: Resolve base branch
         if: steps.check.outputs.ok == 'true'
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+        run: echo "ref=$(gh pr view "$PR" --json baseRefName -q .baseRefName)" >> "$GITHUB_OUTPUT"
+      - name: Require a ruleset with status checks
+        if: steps.check.outputs.ok == 'true'
+        id: guard
+        uses: JimmayVV/fleet-ci/.github/actions/merge-guard@v1
+        with:
+          base: ${{ steps.base.outputs.ref }}
+      - name: Enable auto-merge
+        if: steps.check.outputs.ok == 'true' && steps.guard.outputs.protected == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

@@ -30,10 +30,17 @@ jobs:
         with:
           github-token: ${{ github.token }}
 
+      - name: Require a ruleset with status checks
+        id: guard
+        uses: JimmayVV/fleet-ci/.github/actions/merge-guard@v1
+        with:
+          base: ${{ github.event.pull_request.base.ref }}
+
       - name: Arm auto-merge
         if: >-
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          (inputs.allow-minor && steps.metadata.outputs.update-type == 'version-update:semver-minor')
+          steps.guard.outputs.protected == 'true' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          (inputs.allow-minor && steps.metadata.outputs.update-type == 'version-update:semver-minor'))
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
