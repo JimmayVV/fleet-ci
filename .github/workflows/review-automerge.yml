@@ -1,0 +1,61 @@
+name: Review auto-merge
+
+# Arms auto-merge on a risk:medium PR once the review bot posts a comment
+# ending in "VERDICT: clean". Call this from an `issue_comment` (types:
+# [created]) workflow in the project repo.
+#
+# Guards: the PR must carry risk:medium, and the comment must come from a bot
+# or from the repository owner. A drive-by contributor pasting the verdict
+# line does not qualify.
+
+on:
+  workflow_call:
+    inputs:
+      merge-method:
+        type: string
+        default: squash
+      allowed-bots:
+        description: Newline-separated bot logins allowed to issue a verdict
+        type: string
+        default: |
+          github-actions[bot]
+          claude[bot]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  arm:
+    name: Arm auto-merge (medium)
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, 'VERDICT: clean')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check author and label
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+          AUTHOR: ${{ github.event.comment.user.login }}
+          AUTHOR_TYPE: ${{ github.event.comment.user.type }}
+          ASSOC: ${{ github.event.comment.author_association }}
+          BOTS: ${{ inputs.allowed-bots }}
+        run: |
+          ok=false
+          if [ "$ASSOC" = "OWNER" ]; then ok=true; fi
+          if [ "$AUTHOR_TYPE" = "Bot" ] && printf '%s\n' "$BOTS" | grep -qx "$AUTHOR"; then ok=true; fi
+          labels=$(gh pr view "$PR" --json labels -q '.labels[].name')
+          echo "$labels" | grep -qx 'risk:medium' || ok=false
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          echo "author=$AUTHOR type=$AUTHOR_TYPE assoc=$ASSOC labels=[$labels] -> $ok"
+      - name: Enable auto-merge
+        if: steps.check.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+        run: gh pr merge --auto --${{ inputs.merge-method }} "$PR"

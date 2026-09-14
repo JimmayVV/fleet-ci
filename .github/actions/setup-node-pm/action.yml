@@ -1,0 +1,44 @@
+name: Setup Node package manager
+description: Install Node or Bun with dependency caching and run a clean install.
+
+inputs:
+  package-manager:
+    description: npm or bun
+    required: true
+  node-version-file:
+    description: File that pins Node (npm only)
+    default: .nvmrc
+  bun-version:
+    description: Bun version (bun only)
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      if: inputs.package-manager == 'npm'
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: ${{ inputs.node-version-file }}
+        cache: npm
+    - name: Install (npm)
+      if: inputs.package-manager == 'npm'
+      shell: bash
+      run: npm ci
+
+    - name: Setup Bun
+      if: inputs.package-manager == 'bun'
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+    - name: Cache bun
+      if: inputs.package-manager == 'bun'
+      uses: actions/cache@v4
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
+        restore-keys: bun-${{ runner.os }}-
+    - name: Install (bun)
+      if: inputs.package-manager == 'bun'
+      shell: bash
+      run: bun install --frozen-lockfile

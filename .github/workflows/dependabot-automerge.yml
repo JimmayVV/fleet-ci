@@ -1,0 +1,54 @@
+name: Dependabot auto-merge
+
+# Arms auto-merge on Dependabot patch and minor updates. Majors are left for
+# a human and get a warning annotation so they show up in the run summary.
+
+on:
+  workflow_call:
+    inputs:
+      merge-method:
+        type: string
+        default: squash
+      allow-minor:
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Auto-merge Dependabot
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Arm auto-merge
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          (inputs.allow-minor && steps.metadata.outputs.update-type == 'version-update:semver-minor')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr edit "$PR" --add-label risk:low 2>/dev/null || true
+          gh pr merge --auto --${{ inputs.merge-method }} "$PR"
+
+      - name: Flag major for manual review
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          DEPS: ${{ steps.metadata.outputs.dependency-names }}
+        run: |
+          gh pr edit "$PR" --add-label risk:high 2>/dev/null || true
+          echo "::warning title=Manual review::Major update of $DEPS"

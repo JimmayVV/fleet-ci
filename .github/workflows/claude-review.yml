@@ -1,0 +1,66 @@
+name: Claude review
+
+# Reviews a PR with Claude Code and posts one comment that ends with a
+# machine-readable verdict line. review-automerge.yml reads that line.
+#
+#   VERDICT: clean     no findings worth blocking on
+#   VERDICT: findings  at least one finding the author should read
+#
+# The verdict is advisory on risk:high PRs and gating on risk:medium ones.
+
+on:
+  workflow_call:
+    inputs:
+      extra-prompt:
+        description: Repo-specific review instructions appended to the prompt
+        type: string
+        default: ""
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+  id-token: write
+
+jobs:
+  review:
+    name: Claude review
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review this pull request for a solo maintainer who will read your
+            comment instead of doing a first-pass review themselves. Focus on:
+            - Bugs, wrong behavior, and regressions
+            - Security and data-handling problems
+            - Missing or weakened tests for changed behavior
+            - Violations of CLAUDE.md conventions
+
+            Skip style nits the linter already enforces. Be specific: file,
+            line, what breaks, and how to fix it.
+
+            ${{ inputs.extra-prompt }}
+
+            Post exactly one review comment with `gh pr comment`. The LAST line
+            of the comment must be exactly one of:
+
+                VERDICT: clean
+                VERDICT: findings
+
+            Use `clean` only when you found nothing that should change before
+            merge. Anything you would want the author to read before merging
+            means `findings`.
+          claude_args: >-
+            --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"

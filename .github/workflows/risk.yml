@@ -1,0 +1,170 @@
+name: Risk tier
+
+# Classifies a pull request as risk:low, risk:medium, or risk:high and arms
+# auto-merge for low-risk PRs. Rules, in priority order:
+#
+#   high   any changed file matches a high-path glob, OR the diff is at least
+#          high-min-lines, OR more than max-top-dirs top-level dirs are touched
+#   low    every changed file matches a low-path glob AND the diff is under
+#          low-max-lines
+#   medium everything else
+#
+# Dependabot PRs are skipped; dependabot-automerge.yml owns those.
+# Medium PRs are armed by review-automerge.yml once the review bot posts a
+# clean verdict. High PRs wait for a human.
+
+on:
+  workflow_call:
+    inputs:
+      high-paths:
+        description: Newline-separated globs. Any match forces risk:high.
+        type: string
+        default: ""
+      low-paths:
+        description: Newline-separated globs. All files must match for risk:low.
+        type: string
+        default: |
+          **/*.md
+          docs/**
+          .github/dependabot.yml
+          LICENSE
+          .editorconfig
+          .gitignore
+          .prettierrc*
+          .oxfmtrc*
+          **/*.test.ts
+          **/*.test.tsx
+          **/*.spec.ts
+          **/*.spec.tsx
+          tests/**
+          test/**
+          __tests__/**
+      low-max-lines:
+        type: number
+        default: 300
+      high-min-lines:
+        type: number
+        default: 600
+      max-top-dirs:
+        type: number
+        default: 3
+      auto-merge-low:
+        description: Arm auto-merge on risk:low
+        type: boolean
+        default: true
+      merge-method:
+        type: string
+        default: squash
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  classify:
+    name: Classify
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
+    steps:
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create risk:low    --color 2f7a4a --description "Auto-merges on green"                    --force
+          gh label create risk:medium --color a86d0c --description "Auto-merges on green + clean bot review" --force
+          gh label create risk:high   --color b3312d --description "Needs a human review"                    --force
+
+      - name: Compute tier
+        id: tier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HIGH_PATHS: ${{ inputs.high-paths }}
+          LOW_PATHS: ${{ inputs.low-paths }}
+          LOW_MAX: ${{ inputs.low-max-lines }}
+          HIGH_MIN: ${{ inputs.high-min-lines }}
+          MAX_DIRS: ${{ inputs.max-top-dirs }}
+        run: |
+          gh pr view "$PR" --json files,additions,deletions > pr.json
+          python3 - <<'PY'
+          import json, os, fnmatch, re
+
+          pr = json.load(open("pr.json"))
+          files = [f["path"] for f in pr["files"]]
+          lines = pr["additions"] + pr["deletions"]
+
+          def globs(s):
+              return [g.strip() for g in s.splitlines() if g.strip() and not g.strip().startswith("#")]
+
+          def match(path, glob):
+              # gitignore-ish: "**/" may match zero dirs; "dir/**" matches everything under dir
+              g = glob
+              if g.endswith("/**"):
+                  base = g[:-3]
+                  return path == base or path.startswith(base + "/")
+              if g.startswith("**/"):
+                  tail = g[3:]
+                  return fnmatch.fnmatch(path, tail) or fnmatch.fnmatch(path, "*/" + tail) or fnmatch.fnmatch(path, glob)
+              return fnmatch.fnmatch(path, g)
+
+          high = globs(os.environ["HIGH_PATHS"])
+          low = globs(os.environ["LOW_PATHS"])
+          low_max = int(os.environ["LOW_MAX"]); high_min = int(os.environ["HIGH_MIN"]); max_dirs = int(os.environ["MAX_DIRS"])
+
+          high_hits = sorted({p for p in files for g in high if match(p, g)})
+          top_dirs = {p.split("/")[0] for p in files if "/" in p}
+          all_low = bool(files) and all(any(match(p, g) for g in low) for p in files)
+
+          reasons = []
+          if high_hits: reasons.append(f"touches protected paths: {', '.join(high_hits[:5])}")
+          if lines >= high_min: reasons.append(f"{lines} changed lines >= {high_min}")
+          if len(top_dirs) > max_dirs: reasons.append(f"{len(top_dirs)} top-level dirs > {max_dirs}")
+
+          if reasons:
+              tier = "high"
+          elif all_low and lines < low_max:
+              tier = "low"; reasons.append(f"all files are low-risk paths and {lines} lines < {low_max}")
+          else:
+              tier = "medium"
+              if not all_low: reasons.append("source files changed")
+              if lines >= low_max: reasons.append(f"{lines} changed lines >= {low_max}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as o:
+              o.write(f"tier={tier}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as s:
+              s.write(f"## Risk tier: **{tier}**\n\n" + "".join(f"- {r}\n" for r in reasons) + f"\n{len(files)} files, {lines} lines\n")
+          print(tier, reasons)
+          PY
+
+      - name: Apply label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: |
+          current=$(gh pr view "$PR" --json labels -q '.labels[].name' | grep '^risk:' || true)
+          for l in $current; do [ "$l" != "risk:$TIER" ] && gh pr edit "$PR" --remove-label "$l"; done
+          gh pr edit "$PR" --add-label "risk:$TIER"
+
+  arm-low:
+    name: Arm auto-merge (low)
+    needs: classify
+    if: needs.classify.outputs.tier == 'low' && inputs.auto-merge-low
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr merge --auto --${{ inputs.merge-method }} "$PR"

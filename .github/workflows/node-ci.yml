@@ -1,0 +1,164 @@
+name: Node CI
+
+# Reusable CI for the fleet's TypeScript repos.
+# Every step maps to a package.json script; a repo opts out of a step by
+# setting the matching input to false. Steps that are on run against the
+# script name given (defaults match the fleet baseline).
+
+on:
+  workflow_call:
+    inputs:
+      package-manager:
+        description: npm or bun
+        type: string
+        default: bun
+      node-version-file:
+        description: File that pins Node (ignored for bun unless set)
+        type: string
+        default: .nvmrc
+      bun-version:
+        description: Bun version, or "latest"
+        type: string
+        default: latest
+      lint:
+        type: boolean
+        default: true
+      lint-script:
+        type: string
+        default: lint
+      format-check:
+        type: boolean
+        default: false
+      format-script:
+        type: string
+        default: format:check
+      typecheck:
+        type: boolean
+        default: true
+      typecheck-script:
+        type: string
+        default: typecheck
+      test:
+        type: boolean
+        default: true
+      test-script:
+        type: string
+        default: test
+      build:
+        type: boolean
+        default: true
+      build-script:
+        type: string
+        default: build
+      build-env:
+        description: KEY=VALUE lines exported before the build step
+        type: string
+        default: ""
+      playwright:
+        description: Run Playwright after build
+        type: boolean
+        default: false
+      playwright-script:
+        type: string
+        default: test:e2e
+      playwright-browsers:
+        type: string
+        default: chromium
+      playwright-timeout:
+        type: number
+        default: 15
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup toolchain
+        uses: JimmayVV/fleet-ci/.github/actions/setup-node-pm@v1
+        with:
+          package-manager: ${{ inputs.package-manager }}
+          node-version-file: ${{ inputs.node-version-file }}
+          bun-version: ${{ inputs.bun-version }}
+      - name: Lint
+        if: inputs.lint
+        run: ${{ inputs.package-manager }} run ${{ inputs.lint-script }}
+      - name: Format check
+        if: inputs.format-check
+        run: ${{ inputs.package-manager }} run ${{ inputs.format-script }}
+      - name: Typecheck
+        if: inputs.typecheck
+        run: ${{ inputs.package-manager }} run ${{ inputs.typecheck-script }}
+
+  test:
+    name: Unit Tests
+    if: inputs.test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup toolchain
+        uses: JimmayVV/fleet-ci/.github/actions/setup-node-pm@v1
+        with:
+          package-manager: ${{ inputs.package-manager }}
+          node-version-file: ${{ inputs.node-version-file }}
+          bun-version: ${{ inputs.bun-version }}
+      - name: Test
+        run: ${{ inputs.package-manager }} run ${{ inputs.test-script }}
+
+  build:
+    name: Build
+    if: inputs.build && !cancelled() && !failure()
+    needs: [checks, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup toolchain
+        uses: JimmayVV/fleet-ci/.github/actions/setup-node-pm@v1
+        with:
+          package-manager: ${{ inputs.package-manager }}
+          node-version-file: ${{ inputs.node-version-file }}
+          bun-version: ${{ inputs.bun-version }}
+      - name: Export build env
+        if: inputs.build-env != ''
+        run: printf '%s\n' "$BUILD_ENV" | grep -v '^\s*$' >> "$GITHUB_ENV"
+        env:
+          BUILD_ENV: ${{ inputs.build-env }}
+      - name: Build
+        run: ${{ inputs.package-manager }} run ${{ inputs.build-script }}
+
+  e2e:
+    name: E2E Tests
+    if: inputs.playwright && !cancelled() && !failure()
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.playwright-timeout }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup toolchain
+        uses: JimmayVV/fleet-ci/.github/actions/setup-node-pm@v1
+        with:
+          package-manager: ${{ inputs.package-manager }}
+          node-version-file: ${{ inputs.node-version-file }}
+          bun-version: ${{ inputs.bun-version }}
+      - name: Install Playwright browsers
+        run: ${{ inputs.package-manager == 'bun' && 'bunx' || 'npx' }} playwright install --with-deps ${{ inputs.playwright-browsers }}
+      - name: Export build env
+        if: inputs.build-env != ''
+        run: printf '%s\n' "$BUILD_ENV" | grep -v '^\s*$' >> "$GITHUB_ENV"
+        env:
+          BUILD_ENV: ${{ inputs.build-env }}
+      - name: Run Playwright
+        run: ${{ inputs.package-manager }} run ${{ inputs.playwright-script }}
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
