@@ -44,8 +44,12 @@ jobs:
           AUTHOR_TYPE: ${{ github.event.comment.user.type }}
           ASSOC: ${{ github.event.comment.author_association }}
           BOTS: ${{ inputs.allowed-bots }}
+          BODY: ${{ github.event.comment.body }}
         run: |
           ok=false
+          # The verdict must be the last non-empty line, not merely quoted somewhere.
+          last=$(printf '%s\n' "$BODY" | tr -d '\r' | sed -e 's/[[:space:]]*$//' | grep -v '^$' | tail -n1)
+          [ "$last" = "VERDICT: clean" ] || { echo "last line is not a clean verdict: $last"; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0; }
           if [ "$ASSOC" = "OWNER" ]; then ok=true; fi
           if [ "$AUTHOR_TYPE" = "Bot" ] && printf '%s\n' "$BOTS" | grep -qx "$AUTHOR"; then ok=true; fi
           labels=$(gh pr view "$PR" --json labels -q '.labels[].name')

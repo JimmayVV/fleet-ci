@@ -20,7 +20,7 @@ auto-merge. Change a policy here, tag it, and Dependabot rolls it out.
 |---|---|---|
 | low | every file matches a low-risk glob and the diff is under 300 lines | auto on green |
 | medium | anything not low or high | auto on green plus a clean bot verdict |
-| high | any file matches a repo-defined high-risk glob, or 600+ lines, or more than 3 top-level dirs | human |
+| high | anything under `.github/`, any file matching a repo-defined high-risk glob, or 600+ lines, or more than 3 top-level dirs | human |
 
 Auto-merge only completes when the repo's ruleset requires the CI checks, so
 "on green" means the checks the ruleset names.

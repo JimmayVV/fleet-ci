@@ -3,8 +3,9 @@ name: Risk tier
 # Classifies a pull request as risk:low, risk:medium, or risk:high and arms
 # auto-merge for low-risk PRs. Rules, in priority order:
 #
-#   high   any changed file matches a high-path glob, OR the diff is at least
-#          high-min-lines, OR more than max-top-dirs top-level dirs are touched
+#   high   any changed file matches a high-path glob, OR anything under
+#          .github/ changed (always, not configurable), OR the diff is at
+#          least high-min-lines, OR more than max-top-dirs top-level dirs
 #   low    every changed file matches a low-path glob AND the diff is under
 #          low-max-lines
 #   medium everything else
@@ -26,7 +27,6 @@ on:
         default: |
           **/*.md
           docs/**
-          .github/dependabot.yml
           LICENSE
           .editorconfig
           .gitignore
@@ -112,7 +112,9 @@ jobs:
                   return fnmatch.fnmatch(path, tail) or fnmatch.fnmatch(path, "*/" + tail) or fnmatch.fnmatch(path, glob)
               return fnmatch.fnmatch(path, g)
 
-          high = globs(os.environ["HIGH_PATHS"])
+          # Workflow and policy files are always high, regardless of caller
+          # inputs: a PR must not be able to loosen its own tier.
+          high = globs(os.environ["HIGH_PATHS"]) + [".github/**", "CODEOWNERS", "**/CODEOWNERS"]
           low = globs(os.environ["LOW_PATHS"])
           low_max = int(os.environ["LOW_MAX"]); high_min = int(os.environ["HIGH_MIN"]); max_dirs = int(os.environ["MAX_DIRS"])
 
