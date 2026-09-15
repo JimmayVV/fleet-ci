@@ -67,6 +67,10 @@ on:
       playwright-timeout:
         type: number
         default: 15
+      turbo-cache:
+        description: Cache Turborepo's local .turbo directory in every job
+        type: boolean
+        default: false
     secrets:
       build-secrets:
         description: KEY=VALUE lines exported before build and e2e, from the caller's secrets
@@ -80,6 +84,8 @@ jobs:
     name: Lint & Type Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TURBO_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Setup toolchain
@@ -88,6 +94,13 @@ jobs:
           package-manager: ${{ inputs.package-manager }}
           node-version-file: ${{ inputs.node-version-file }}
           bun-version: ${{ inputs.bun-version }}
+      - name: Cache Turborepo
+        if: inputs.turbo-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
       - name: Lint
         if: inputs.lint
         run: ${{ inputs.package-manager }} run ${{ inputs.lint-script }}
@@ -103,6 +116,8 @@ jobs:
     if: inputs.test
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TURBO_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Setup toolchain
@@ -111,6 +126,13 @@ jobs:
           package-manager: ${{ inputs.package-manager }}
           node-version-file: ${{ inputs.node-version-file }}
           bun-version: ${{ inputs.bun-version }}
+      - name: Cache Turborepo
+        if: inputs.turbo-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
       - name: Test
         run: ${{ inputs.package-manager }} run ${{ inputs.test-script }}
 
@@ -120,6 +142,8 @@ jobs:
     needs: [checks, test]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TURBO_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Setup toolchain
@@ -128,6 +152,13 @@ jobs:
           package-manager: ${{ inputs.package-manager }}
           node-version-file: ${{ inputs.node-version-file }}
           bun-version: ${{ inputs.bun-version }}
+      - name: Cache Turborepo
+        if: inputs.turbo-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
       - name: Export build env
         if: inputs.build-env != '' || env.BUILD_SECRETS != ''
         run: printf '%s\n%s\n' "$BUILD_ENV" "$BUILD_SECRETS" | grep -v '^\s*$' >> "$GITHUB_ENV"
@@ -143,6 +174,8 @@ jobs:
     needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.playwright-timeout }}
+    env:
+      TURBO_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Setup toolchain
@@ -151,6 +184,13 @@ jobs:
           package-manager: ${{ inputs.package-manager }}
           node-version-file: ${{ inputs.node-version-file }}
           bun-version: ${{ inputs.bun-version }}
+      - name: Cache Turborepo
+        if: inputs.turbo-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
       - name: Install Playwright browsers
         run: ${{ inputs.package-manager == 'bun' && 'bunx' || 'npx' }} playwright install --with-deps ${{ inputs.playwright-browsers }}
       - name: Export build env

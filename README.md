@@ -81,6 +81,32 @@ jobs:
     uses: JimmayVV/fleet-ci/.github/workflows/review-automerge.yml@v1
 ```
 
+## node-ci inputs worth knowing
+
+| Input | Default | What it does |
+|---|---|---|
+| `turbo-cache` | `false` | Adds an `actions/cache` step for `.turbo` to every job (checks, test, build, e2e), keyed `turbo-<os>-<sha>` with a `turbo-<os>-` restore prefix, and sets `TURBO_TELEMETRY_DISABLED=1`. Turn it on only when the caller's scripts actually run through Turborepo — the scripts themselves stay whatever the caller's `package.json` says. |
+
+Remote caching via Vercel is optional and not wired up here. If a caller wants
+it, Turborepo reads `TURBO_TOKEN` and `TURBO_TEAM` from the environment, and the
+caller can pass them through `build-secrets`:
+
+```yaml
+jobs:
+  ci:
+    uses: JimmayVV/fleet-ci/.github/workflows/node-ci.yml@v1
+    with:
+      turbo-cache: true
+    secrets:
+      build-secrets: |
+        TURBO_TOKEN=${{ secrets.TURBO_TOKEN }}
+        TURBO_TEAM=${{ secrets.TURBO_TEAM }}
+```
+
+Note that `build-secrets` is exported before the build and e2e steps only, so
+remote cache would apply to those two jobs; the local `.turbo` cache above
+covers all four.
+
 ## Caller permissions
 
 A caller must declare a top-level `permissions:` block at least as wide as
