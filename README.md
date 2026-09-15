@@ -70,14 +70,17 @@ on:
     types: [opened, synchronize]
   issue_comment:
     types: [created]
+permissions: {}
 jobs:
   review:
     if: github.event_name == 'pull_request'
+    permissions: { contents: read, pull-requests: write, issues: read, id-token: write }
     uses: JimmayVV/fleet-ci/.github/workflows/claude-review.yml@v1
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
   arm:
     if: github.event_name == 'issue_comment'
+    permissions: { contents: write, pull-requests: write }
     uses: JimmayVV/fleet-ci/.github/workflows/review-automerge.yml@v1
 ```
 
@@ -109,8 +112,10 @@ covers all four.
 
 ## Caller permissions
 
-A caller must declare a top-level `permissions:` block at least as wide as
-the workflow it calls, or the run fails at startup with no logs. Use:
+A caller must grant permissions at least as wide as the workflow it calls,
+or the run fails at startup with no logs. Grant them per job (allowed on
+`uses:` jobs) so the review job cannot write contents. For a single-job
+caller, a top-level block works:
 
 ```yaml
 permissions:
