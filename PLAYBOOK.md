@@ -66,6 +66,26 @@ plan on a personal account), a default-branch ruleset requiring the CI checks,
 the `CLAUDE_CODE_OAUTH_TOKEN` secret, and `dependabot.yml` with a
 `github-actions` entry. New projects start from `JimmayVV/fleet-template`.
 
+## Unit economics rule (added 2026-09-16)
+
+Jimmy's constraint, in his words: "I only ever want to spend money
+recurringly on users who pay me." Checked three ways before any product ships:
+
+1. **Free users cost $0 marginal.** Free tier is local-only and never calls a
+   paid service. Enforce it in code and test it (the clock's connection policy
+   is the reference).
+2. **Recurring cost means recurring price.** If serving a paying user costs
+   money every month (AI inference, storage, sync), the price is a
+   subscription set above the heaviest plausible user's monthly cost, with a
+   per-user cap in code. One-time pricing is allowed only when marginal cost
+   is near zero (static, local, or a few hundred mutations a night).
+3. **Fixed platform costs stay inside free tiers** until revenue clears them,
+   with hard spending limits set to $0 on every provider that offers one
+   (Convex, Netlify, Vercel). A surprise bill is a bug.
+
+The dashboard shows cost per paying user beside revenue per paying user once
+the Polar and Convex integrations are connected; red means the rule is broken.
+
 ## Tech stack baseline
 
 - **TypeScript:** bun, Vite, vitest, Playwright for UI, oxlint, oxfmt, tsgo
