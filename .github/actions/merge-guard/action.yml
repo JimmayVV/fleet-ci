@@ -24,9 +24,12 @@ runs:
         GH_REPO: ${{ github.repository }}
         BASE: ${{ inputs.base }}
       run: |
-        rules=$(gh api "repos/$GH_REPO/rules/branches/$BASE" -q '[.[] | select(.type == "required_status_checks")] | length' 2>/dev/null || echo 0)
-        classic=$(gh api "repos/$GH_REPO/branches/$BASE/protection/required_status_checks" -q '.contexts | length' 2>/dev/null || echo 0)
-        if [ "${rules:-0}" -gt 0 ] || [ "${classic:-0}" -gt 0 ]; then
+        # A 403 or 404 prints the error body on stdout, so `|| echo 0` alone
+        # would leave "{...}0" in the variable. Keep only a bare integer.
+        count() { out=$("$@" 2>/dev/null) || out=0; case "$out" in ''|*[!0-9]*) echo 0 ;; *) echo "$out" ;; esac; }
+        rules=$(count gh api "repos/$GH_REPO/rules/branches/$BASE" -q '[.[] | select(.type == "required_status_checks")] | length')
+        classic=$(count gh api "repos/$GH_REPO/branches/$BASE/protection/required_status_checks" -q '.contexts | length')
+        if [ "$rules" -gt 0 ] || [ "$classic" -gt 0 ]; then
           echo "protected=true" >> "$GITHUB_OUTPUT"
         else
           echo "protected=false" >> "$GITHUB_OUTPUT"

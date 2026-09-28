@@ -1,7 +1,12 @@
 name: Dependabot auto-merge
 
-# Arms auto-merge on Dependabot patch and minor updates. Majors are left for
-# a human and get a warning annotation so they show up in the run summary.
+# Labels every Dependabot PR with a risk tier, then arms auto-merge on patch
+# and minor updates where the merge guard allows it. Majors, and grouped or
+# security updates whose type fetch-metadata cannot name, are risk:high and
+# left for a human with a warning annotation in the run summary.
+#
+# Labelling does not depend on the guard: a repo that cannot auto-merge (a
+# private repo on a Free plan) still gets tiers, so its queue can be triaged.
 
 on:
   workflow_call:
@@ -30,6 +35,29 @@ jobs:
         with:
           github-token: ${{ github.token }}
 
+      - name: Label risk tier
+        id: tier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          UPDATE: ${{ steps.metadata.outputs.update-type }}
+          ALLOW_MINOR: ${{ inputs.allow-minor }}
+          DEPS: ${{ steps.metadata.outputs.dependency-names }}
+        run: |
+          case "$UPDATE" in
+            version-update:semver-patch) tier=low ;;
+            version-update:semver-minor) [ "$ALLOW_MINOR" = true ] && tier=low || tier=high ;;
+            *) tier=high ;;
+          esac
+          gh label create risk:low  --color 2f7a4a --description "Auto-merges on green" --force >/dev/null
+          gh label create risk:high --color b3312d --description "Needs a human review" --force >/dev/null
+          gh pr edit "$PR" --add-label "risk:$tier"
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          if [ "$tier" = high ]; then
+            echo "::warning title=Manual review::${UPDATE:-unknown update type} for $DEPS"
+          fi
+
       - name: Require a ruleset with status checks
         id: guard
         uses: JimmayVV/fleet-ci/.github/actions/merge-guard@v1
@@ -37,25 +65,10 @@ jobs:
           base: ${{ github.event.pull_request.base.ref }}
 
       - name: Arm auto-merge
-        if: >-
-          steps.guard.outputs.protected == 'true' &&
-          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          (inputs.allow-minor && steps.metadata.outputs.update-type == 'version-update:semver-minor'))
+        if: steps.guard.outputs.protected == 'true' && steps.tier.outputs.tier == 'low'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-        run: |
-          gh pr edit "$PR" --add-label risk:low 2>/dev/null || true
-          gh pr merge --auto --${{ inputs.merge-method }} "$PR"
+        run: gh pr merge --auto --${{ inputs.merge-method }} "$PR"
 
-      - name: Flag major for manual review
-        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          DEPS: ${{ steps.metadata.outputs.dependency-names }}
-        run: |
-          gh pr edit "$PR" --add-label risk:high 2>/dev/null || true
-          echo "::warning title=Manual review::Major update of $DEPS"
