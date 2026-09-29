@@ -153,6 +153,12 @@ jobs:
           current=$(gh pr view "$PR" --json labels -q '.labels[].name' | grep '^risk:' || true)
           for l in $current; do [ "$l" != "risk:$TIER" ] && gh pr edit "$PR" --remove-label "$l"; done
           gh pr edit "$PR" --add-label "risk:$TIER"
+          # A new push invalidates any earlier clean verdict: auto-merge armed
+          # for the previous commit must not carry over to this one. Medium
+          # re-arms only when the review of this commit comes back clean.
+          if [ "$TIER" != low ]; then
+            gh pr merge --disable-auto "$PR" >/dev/null 2>&1 || true
+          fi
 
   arm-low:
     name: Arm auto-merge (low)
