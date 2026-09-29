@@ -36,7 +36,7 @@ jobs:
       github.event.issue.pull_request &&
       contains(github.event.comment.body, 'VERDICT: clean')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Check author and label
         id: check
@@ -60,18 +60,31 @@ jobs:
           labels=$(gh pr view "$PR" --json labels -q '.labels[].name')
           echo "$labels" | grep -qx 'risk:medium' || ok=false
           # The verdict must be for the PR as it stands. A review of an older
-          # commit can post its comment after a newer commit was pushed; it must
-          # not arm auto-merge for code it never read. Require the review run
-          # for the current head to have finished successfully, and none still
-          # running for it.
+          # commit can post its comment after a newer commit was pushed, and the
+          # bot posts before its own run finishes. So wait for the Review run of
+          # the current head to finish, then judge by the bot's latest comment
+          # since that run started: a stale clean verdict loses to it.
           head=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
-          runs=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$head&event=pull_request&per_page=50" \
-            | jq --arg wf "$WORKFLOW" '[.workflow_runs[] | select(.name == $wf)]')
-          done_ok=$(printf '%s' "$runs" | jq '[.[] | select(.status == "completed" and .conclusion == "success")] | length')
-          running=$(printf '%s' "$runs" | jq '[.[] | select(.status != "completed")] | length')
-          if [ "$done_ok" -eq 0 ] || [ "$running" -gt 0 ]; then
-            echo "review of head ${head:0:7} not finished (done_ok=$done_ok running=$running); not arming"
+          for _ in $(seq 1 40); do
+            runs=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$head&event=pull_request&per_page=50" \
+              | jq --arg wf "$WORKFLOW" '[.workflow_runs[] | select(.name == $wf)]')
+            running=$(printf '%s' "$runs" | jq '[.[] | select(.status != "completed")] | length')
+            [ "$running" -eq 0 ] && break
+            sleep 15
+          done
+          started=$(printf '%s' "$runs" | jq -r '[.[] | select(.status == "completed" and .conclusion == "success")] | sort_by(.run_started_at) | last | .run_started_at // empty')
+          if [ "$running" -ne 0 ] || [ -z "$started" ]; then
+            echo "no finished review of head ${head:0:7}; not arming"
             ok=false
+          else
+            latest=$(gh api "repos/$GH_REPO/issues/$PR/comments?per_page=100" --paginate \
+              | jq -rs --arg a "$AUTHOR" --arg t "$started" \
+                '[.[][] | select(.user.login == $a and .created_at >= $t)] | sort_by(.created_at) | last | .body // ""' \
+              | tr -d '\r' | sed -e 's/[[:space:]]*$//' | grep -v '^$' | tail -n1)
+            if [ "$latest" != "VERDICT: clean" ]; then
+              echo "latest verdict on head ${head:0:7} is not clean: $latest; not arming"
+              ok=false
+            fi
           fi
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
           echo "author=$AUTHOR type=$AUTHOR_TYPE assoc=$ASSOC labels=[$labels] -> $ok"
