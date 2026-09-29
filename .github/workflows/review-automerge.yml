@@ -55,7 +55,7 @@ jobs:
           last=$(printf '%s\n' "$BODY" | tr -d '\r' | sed -e 's/[[:space:]]*$//' | grep -v '^$' | tail -n1)
           [ "$last" = "VERDICT: clean" ] || { echo "last line is not a clean verdict: $last"; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0; }
           if [ "$ASSOC" = "OWNER" ]; then ok=true; fi
-          if [ "$AUTHOR_TYPE" = "Bot" ] && printf '%s\n' "$BOTS" | grep -qx "$AUTHOR"; then ok=true; fi
+          if [ "$AUTHOR_TYPE" = "Bot" ] && printf '%s\n' "$BOTS" | grep -qxF "$AUTHOR"; then ok=true; fi
           labels=$(gh pr view "$PR" --json labels -q '.labels[].name')
           echo "$labels" | grep -qx 'risk:medium' || ok=false
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
