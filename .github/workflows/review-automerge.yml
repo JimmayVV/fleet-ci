@@ -17,8 +17,12 @@ on:
       allowed-bots:
         description: Newline-separated bot logins allowed to issue a verdict
         type: string
+        # claude[bot] is who actually posts the review: claude-code-action
+        # comments as the Claude GitHub App, not as github-actions. With only
+        # github-actions listed, no risk:medium PR could ever arm.
         default: |
           github-actions[bot]
+          claude[bot]
           claude[bot]
 
 permissions:
